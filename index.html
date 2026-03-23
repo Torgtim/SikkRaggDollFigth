@@ -1,196 +1,33 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=landscape">
-    <title>Ragdoll Boxing PVP</title>
-    <script src="https://cloudflare.com"></script>
-    <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        canvas { display: block; background: linear-gradient(to bottom, #87CEEB 0%, #f4a460 100%); }
-        
-        /* Basketball Arena Look */
-        #arena-bg {
-            position: absolute; width: 100%; height: 100%; pointer-events: none;
-            background-image: url('https://transparenttextures.com');
-            background-color: #d2a679; opacity: 0.3;
-        }
-
-        .ui-container {
-            position: absolute; top: 0; width: 50%; height: 100%;
-            display: flex; flex-direction: column; align-items: center; padding: 10px;
-            box-sizing: border-box; pointer-events: none;
-        }
-        #p1-ui { left: 0; border-right: 1px dashed rgba(255,255,255,0.3); }
-        #p2-ui { right: 0; }
-
-        .bar-container { width: 80%; height: 20px; background: #444; border: 2px solid #fff; margin: 5px; pointer-events: none; }
-        .hp-bar { height: 100%; width: 100%; background: #ff4d4d; transition: width 0.2s; }
-        .charge-bar { height: 100%; width: 0%; background: #4de6ff; transition: width 0.2s; }
-
-        .abilities { display: none; gap: 5px; margin-top: 10px; pointer-events: auto; }
-        .ability-btn {
-            padding: 8px; font-size: 12px; background: gold; border: none; 
-            border-radius: 5px; cursor: pointer; font-weight: bold;
-        }
-        
-        .stun-msg { position: absolute; color: white; font-weight: bold; display: none; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stickman PvP</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="arena-bg"></div>
 
-    <!-- UI Spiller 1 -->
-    <div id="p1-ui" class="ui-container">
-        <div class="bar-container"><div id="p1-hp" class="hp-bar"></div></div>
-        <div class="bar-container"><div id="p1-charge" class="charge-bar"></div></div>
-        <div id="p1-abilities" class="abilities">
-            <button class="ability-btn" onclick="useAbility(1, 'beam')">BEAM</button>
-            <button class="ability-btn" onclick="useAbility(1, 'stun')">STUN</button>
-            <button class="ability-btn" onclick="useAbility(1, 'heal')">HEAL</button>
-        </div>
-    </div>
+<canvas id="game"></canvas>
 
-    <!-- UI Spiller 2 -->
-    <div id="p2-ui" class="ui-container">
-        <div class="bar-container"><div id="p2-hp" class="hp-bar"></div></div>
-        <div class="bar-container"><div id="p2-charge" class="charge-bar"></div></div>
-        <div id="p2-abilities" class="abilities">
-            <button class="ability-btn" onclick="useAbility(2, 'beam')">BEAM</button>
-            <button class="ability-btn" onclick="useAbility(2, 'stun')">STUN</button>
-            <button class="ability-btn" onclick="useAbility(2, 'heal')">HEAL</button>
-        </div>
-    </div>
+<div id="ui">
+  <div class="playerUI left">
+    <div>❤️ <span id="hp1">100</span></div>
+    <div>⚡ <span id="charge1">0</span></div>
+  </div>
 
-    <script>
-        const { Engine, Render, Runner, World, Bodies, Body, Constraint, MouseConstraint, Mouse, Events, Vector } = Matter;
+  <div class="playerUI right">
+    <div>❤️ <span id="hp2">100</span></div>
+    <div>⚡ <span id="charge2">0</span></div>
+  </div>
+</div>
 
-        const engine = Engine.create();
-        const render = Render.create({
-            element: document.body,
-            engine: engine,
-            options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: 'transparent' }
-        });
+<div id="abilities" class="hidden">
+  <button onclick="useAbility('beam')">BEAM</button>
+  <button onclick="useAbility('stun')">STUN</button>
+  <button onclick="useAbility('heal')">HEAL</button>
+</div>
 
-        // Vegger og gulv (Basketball arena)
-        const ground = Bodies.rectangle(window.innerWidth/2, window.innerHeight + 10, window.innerWidth, 60, { isStatic: true, render: { fillStyle: '#8b4513' } });
-        const wallL = Bodies.rectangle(-10, window.innerHeight/2, 20, window.innerHeight, { isStatic: true });
-        const wallR = Bodies.rectangle(window.innerWidth + 10, window.innerHeight/2, 20, window.innerHeight, { isStatic: true });
-        World.add(engine.world, [ground, wallL, wallR]);
-
-        // Spiller-data
-        let players = {
-            1: { hp: 100, charge: 0, stunned: false, color: '#33f', side: 'left' },
-            2: { hp: 100, charge: 0, stunned: false, color: '#f33', side: 'right' }
-        };
-
-        function createStickman(x, y, color, id) {
-            const head = Bodies.circle(x, y-50, 15, { friction: 0.5, restitution: 0.5, render: { fillStyle: color } });
-            const torso = Bodies.rectangle(x, y, 10, 40, { render: { fillStyle: color } });
-            const hand = Bodies.circle(x + (id === 1 ? 20 : -20), y, 12, { 
-                render: { fillStyle: '#fff', strokeStyle: '#000', lineWidth: 2 },
-                label: 'hand-' + id
-            });
-            
-            const neck = Constraint.create({ bodyA: head, bodyB: torso, pointA: {x:0, y:15}, pointB: {x:0, y:-20}, stiffness: 0.4 });
-            const arm = Constraint.create({ bodyA: torso, bodyB: hand, pointA: {x:0, y:-10}, pointB: {x:0, y:0}, stiffness: 0.1, length: 30 });
-
-            World.add(engine.world, [head, torso, hand, neck, arm]);
-            return { head, torso, hand, id };
-        }
-
-        const p1 = createStickman(window.innerWidth * 0.25, 300, '#33f', 1);
-        const p2 = createStickman(window.innerWidth * 0.75, 300, '#f33', 2);
-
-        // Slå-logikk og kollisjon
-        Events.on(engine, 'collisionStart', (event) => {
-            event.pairs.forEach(pair => {
-                const labels = [pair.bodyA.label, pair.bodyB.label];
-                if (labels.includes('hand-1') && (pair.bodyA === p2.torso || pair.bodyB === p2.torso)) hit(1, 2);
-                if (labels.includes('hand-2') && (pair.bodyA === p1.torso || pair.bodyB === p1.torso)) hit(2, 1);
-            });
-        });
-
-        function hit(attackerId, victimId) {
-            if (players[attackerId].stunned) return;
-            players[victimId].hp -= 5;
-            players[attackerId].charge = Math.min(100, players[attackerId].charge + 20);
-            updateUI();
-        }
-
-        function updateUI() {
-            [1, 2].forEach(id => {
-                document.getElementById(`p${id}-hp`).style.width = players[id].hp + "%";
-                document.getElementById(`p${id}-charge`).style.width = players[id].charge + "%";
-                document.getElementById(`p${id}-abilities`).style.display = players[id].charge >= 100 ? 'flex' : 'none';
-                if(players[id].hp <= 0) alert("Spiller " + (id === 1 ? 2 : 1) + " vant!");
-            });
-        }
-
-        function useAbility(id, type) {
-            if (players[id].charge < 100) return;
-            players[id].charge = 0;
-            const enemyId = id === 1 ? 2 : 1;
-            const enemyBody = enemyId === 1 ? p1.torso : p2.torso;
-
-            if (type === 'beam') {
-                players[enemyId].hp -= 30;
-                Body.applyForce(enemyBody, enemyBody.position, { x: id === 1 ? 0.5 : -0.5, y: -0.5 });
-            } else if (type === 'stun') {
-                players[enemyId].stunned = true;
-                setTimeout(() => players[enemyId].stunned = false, 5000);
-            } else if (type === 'heal') {
-                players[id].hp = Math.min(100, players[id].hp + 50);
-            }
-            updateUI();
-        }
-
-        // Input-logikk (Flinging)
-        let dragStart = { 1: null, 2: null };
-        
-        window.addEventListener('touchstart', (e) => {
-            Array.from(e.changedTouches).forEach(t => {
-                const side = t.clientX < window.innerWidth / 2 ? 1 : 2;
-                dragStart[side] = { x: t.clientX, y: t.clientY };
-                
-                // Slå fremover ved klikk
-                const body = side === 1 ? p1 : p2;
-                if (!players[side].stunned) {
-                    const force = side === 1 ? 0.05 : -0.05;
-                    Body.applyForce(body.hand, body.hand.position, { x: force, y: -0.02 });
-                    // Mister charge hvis man bare klikker i lufta (forenklet: mister litt hver gang man prøver)
-                    players[side].charge = Math.max(0, players[side].charge - 2);
-                    updateUI();
-                }
-            });
-        });
-
-        window.addEventListener('touchend', (e) => {
-            Array.from(e.changedTouches).forEach(t => {
-                const side = t.clientX < window.innerWidth / 2 ? 1 : 2;
-                if (dragStart[side]) {
-                    const dx = t.clientX - dragStart[side].x;
-                    const dy = t.clientY - dragStart[side].y;
-                    
-                    // Fling motsatt vei (dra bakover for å skyte frem)
-                    const body = side === 1 ? p1.torso : p2.torso;
-                    if (!players[side].stunned) {
-                        Body.applyForce(body, body.position, { x: -dx * 0.0005, y: -dy * 0.0005 });
-                    }
-                    dragStart[side] = null;
-                }
-            });
-        });
-
-        Render.run(render);
-        const runner = Runner.create();
-        Runner.run(runner, engine);
-
-        // Auto-resize
-        window.addEventListener('resize', () => {
-            render.canvas.width = window.innerWidth;
-            render.canvas.height = window.innerHeight;
-        });
-    </script>
+<script src="script.js"></script>
 </body>
 </html>
