@@ -1,13 +1,19 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+const GROUND = () => canvas.height - 120;
 
 let players = [
   {
-    x: 200,
-    y: canvas.height - 150,
+    x: 150,
+    y: GROUND(),
     vx: 0,
     hp: 100,
     charge: 0,
@@ -15,8 +21,8 @@ let players = [
     stun: 0
   },
   {
-    x: canvas.width - 200,
-    y: canvas.height - 150,
+    x: canvas.width - 150,
+    y: GROUND(),
     vx: 0,
     hp: 100,
     charge: 0,
@@ -25,32 +31,49 @@ let players = [
   }
 ];
 
-let dragging = [false, false];
-let dragStart = [0, 0];
+let currentAbilityPlayer = null;
+let startX = 0;
 let activePlayer = null;
 
-function drawPlayer(p) {
-  ctx.strokeStyle = "black";
-  ctx.lineWidth = 5;
+// 🎨 tegn bakgrunn (basket arena vibe)
+function drawBackground() {
+  ctx.fillStyle = "#c97b2e"; // gulv
+  ctx.fillRect(0, GROUND(), canvas.width, 200);
 
-  // body
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 4;
+
+  // midtlinje
+  ctx.beginPath();
+  ctx.moveTo(canvas.width / 2, GROUND());
+  ctx.lineTo(canvas.width / 2, canvas.height);
+  ctx.stroke();
+}
+
+// 🧍 spiller
+function drawPlayer(p) {
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "black";
+
+  // kropp
   ctx.beginPath();
   ctx.moveTo(p.x, p.y);
   ctx.lineTo(p.x, p.y - 50);
   ctx.stroke();
 
-  // arms (punch)
-  ctx.beginPath();
-  ctx.moveTo(p.x, p.y - 40);
-  ctx.lineTo(p.x + 30 * p.facing, p.y - 40);
-  ctx.stroke();
-
-  // head
+  // hode
   ctx.beginPath();
   ctx.arc(p.x, p.y - 70, 15, 0, Math.PI * 2);
   ctx.stroke();
+
+  // arm (retning)
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y - 40);
+  ctx.lineTo(p.x + 35 * p.facing, p.y - 40);
+  ctx.stroke();
 }
 
+// ⚙️ update
 function update() {
   players.forEach((p, i) => {
     if (p.stun > 0) p.stun--;
@@ -58,8 +81,12 @@ function update() {
     p.x += p.vx;
     p.vx *= 0.9;
 
-    // gravity-ish
-    if (p.y < canvas.height - 150) p.y += 5;
+    // hold på bakken
+    p.y = GROUND();
+
+    // snu mot motstander
+    let enemy = players[1 - i];
+    p.facing = enemy.x > p.x ? 1 : -1;
 
     // bounds
     if (p.x < 50) p.x = 50;
@@ -67,12 +94,13 @@ function update() {
   });
 }
 
-function checkHit(attacker, defender) {
+// 👊 hit check
+function hit(attacker, defender) {
   let dist = Math.abs(attacker.x - defender.x);
 
   if (dist < 80) {
     defender.hp -= 10;
-    attacker.charge += 20;
+    attacker.charge += 25;
 
     if (attacker.charge > 100) attacker.charge = 100;
   } else {
@@ -80,30 +108,15 @@ function checkHit(attacker, defender) {
   }
 }
 
-function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  update();
-
-  drawPlayer(players[0]);
-  drawPlayer(players[1]);
-
-  document.getElementById("hp1").innerText = players[0].hp;
-  document.getElementById("hp2").innerText = players[1].hp;
-  document.getElementById("charge1").innerText = players[0].charge;
-  document.getElementById("charge2").innerText = players[1].charge;
-
-  requestAnimationFrame(gameLoop);
-}
-
+// 🎮 touch start
 canvas.addEventListener("touchstart", (e) => {
   let x = e.touches[0].clientX;
 
   activePlayer = x < canvas.width / 2 ? 0 : 1;
-  dragging[activePlayer] = true;
-  dragStart = [x, e.touches[0].clientY];
+  startX = x;
 });
 
+// 🎮 touch end
 canvas.addEventListener("touchend", (e) => {
   if (activePlayer === null) return;
 
@@ -112,32 +125,35 @@ canvas.addEventListener("touchend", (e) => {
 
   if (p.stun > 0) return;
 
-  // punch
-  checkHit(p, enemy);
+  // slag
+  hit(p, enemy);
 
-  // fling
-  let dx = dragStart[0] - p.x;
-  p.vx += dx * 0.1;
+  // fling (drag bakover = boost frem)
+  let drag = startX - p.x;
+  p.vx += drag * 0.15;
 
-  // abilities
+  // ability klar
   if (p.charge >= 100) {
+    currentAbilityPlayer = activePlayer;
     document.getElementById("abilities").classList.remove("hidden");
   }
 
-  dragging[activePlayer] = false;
   activePlayer = null;
 });
 
+// 💥 abilities
 function useAbility(type) {
-  let p = players[0].charge === 100 ? players[0] : players[1];
-  let enemy = players[0] === p ? players[1] : players[0];
+  let p = players[currentAbilityPlayer];
+  let enemy = players[1 - currentAbilityPlayer];
+
+  if (!p) return;
 
   if (type === "beam") {
     enemy.hp -= 30;
   }
 
   if (type === "stun") {
-    enemy.stun = 300;
+    enemy.stun = 180; // ~5 sek
   }
 
   if (type === "heal") {
@@ -146,7 +162,26 @@ function useAbility(type) {
   }
 
   p.charge = 0;
+  currentAbilityPlayer = null;
   document.getElementById("abilities").classList.add("hidden");
 }
 
-gameLoop();
+// 🔄 game loop
+function loop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawBackground();
+  update();
+
+  players.forEach(drawPlayer);
+
+  // UI
+  document.getElementById("hp1").innerText = players[0].hp;
+  document.getElementById("hp2").innerText = players[1].hp;
+  document.getElementById("charge1").innerText = players[0].charge;
+  document.getElementById("charge2").innerText = players[1].charge;
+
+  requestAnimationFrame(loop);
+}
+
+loop();
